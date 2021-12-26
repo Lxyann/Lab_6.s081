@@ -22,8 +22,6 @@ fmtname(char *path)
   return buf;
 }
 
-
-
 void
 ls(char *path)
 {
