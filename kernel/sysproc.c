@@ -47,8 +47,12 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
+  if(growproc(n) < 0){
+    printf("grow error\n");
     return -1;
+  }
+    
+  // printf("pid: %d, sz: %p, addr: %p\n", myproc()->pid, myproc()->sz, addr);
   return addr;
 }
 

@@ -26,7 +26,7 @@ uservec:
         
 	# swap a0 and sscratch
         # so that a0 is TRAPFRAME
-        csrrw a0, sscratch, a0
+        csrrw a0, sscratch, a0  #a0 is the va of trapframe
 
         # save the user registers in TRAPFRAME
         sd ra, 40(a0)

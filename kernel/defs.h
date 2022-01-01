@@ -109,6 +109,10 @@ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 
+//lab3
+pagetable_t     proc_kernel_pagetable(struct proc *p);
+void            proc_free_kernel_pagetable(pagetable_t kernel_pagetable);
+
 // swtch.S
 void            swtch(struct context*, struct context*);
 
@@ -178,6 +182,21 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+//lab3
+void            vmprint(pagetable_t pagetable);
+void            kvmfree(pagetable_t);
+void            kvmunmap(pagetable_t, uint64, uint64, int);
+void            kuvminit(pagetable_t kernel_pagetable, pagetable_t pagetable, uchar *src);
+int             kuvmcopy(pagetable_t, pagetable_t, uint64);
+uint64          kuvmalloc(pagetable_t kernel_pagetable, pagetable_t pagetable, uint64 oldsz, uint64 newsz);
+uint64          kuvmdealloc(pagetable_t, uint64, uint64);
+uint64          kwalkaddr(pagetable_t pagetable, uint64 va);
+int             kcopyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len);
+void            kuvmclear(pagetable_t, uint64);
+
+//vmcopyin.c && lab3
+int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
 
 // plic.c
 void            plicinit(void);

@@ -952,6 +952,7 @@ forkforkfork(char *s)
 void
 reparent2(char *s)
 {
+  // int count = 0;
   for(int i = 0; i < 800; i++){
     int pid1 = fork();
     if(pid1 < 0){
@@ -963,9 +964,10 @@ reparent2(char *s)
       fork();
       exit(0);
     }
+    // printf("wait!\n");
     wait(0);
   }
-
+  // printf("end!\n");
   exit(0);
 }
 
@@ -2492,23 +2494,37 @@ badarg(char *s)
 // test the exec() code that cleans up if it runs out
 // of memory. it's really a test that such a condition
 // doesn't cause a panic.
+
+int
+countfree();
+
 void
 execout(char *s)
 {
+  // printf("free mem %d\n", countfree());
+  // for(int avail = 0; avail < 9; avail++){
   for(int avail = 0; avail < 15; avail++){
+    // printf("free mem1 %d\n", countfree());
     int pid = fork();
     if(pid < 0){
       printf("fork failed\n");
       exit(1);
     } else if(pid == 0){
+      // int fd = open("countfree.txt", O_RDWR);
+      // char buf[88];
+      // memset(buf, 0, sizeof(buf));
       // allocate all of memory.
+      
+
+      uint64 a = 0;
       while(1){
-        uint64 a = (uint64) sbrk(4096);
+        a = (uint64) sbrk(4096);
+        // grow error -1
         if(a == 0xffffffffffffffffLL)
           break;
         *(char*)(a + 4096 - 1) = 1;
       }
-
+      // printf("Out of while loop, a: %p\n", a);
       // free a few pages, in order to let exec() make some
       // progress.
       for(int i = 0; i < avail; i++)
@@ -2516,14 +2532,20 @@ execout(char *s)
       
       close(1);
       char *args[] = { "echo", "x", 0 };
+      // exit(0);
       exec("echo", args);
+      // write(fd, buf, )
+      // printf("free mem2 %d\n", countfree());
       exit(0);
     } else {
+      printf("fork %d return, parent pid: %d\n", avail, pid);
       wait((int*)0);
+      // printf("free mem3 %d\n", countfree());
     }
   }
 
   exit(0);
+  // printf("exit free mem %d\n", countfree());
 }
 
 //
@@ -2724,6 +2746,7 @@ main(int argc, char *argv[])
 
   printf("usertests starting\n");
   int free0 = countfree();
+  printf("usertests starting free mem %d\n", free0);
   int free1 = 0;
   int fail = 0;
   for (struct test *t = tests; t->s != 0; t++) {
