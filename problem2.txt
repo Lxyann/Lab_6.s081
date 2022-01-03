@@ -1,0 +1,3 @@
+0x0000000080002cdc -> <sys_sleep>  <-> sysproc.c
+0x0000000080002bb6 -> <syscall>    <-> syscall.c
+0x00000000800028a0 -> <usertrap>   <-> trap.c

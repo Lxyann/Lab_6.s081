@@ -85,9 +85,12 @@ sys_write(void)
   int n;
   uint64 p;
 
-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
+  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0){
+    // printf("error1\n");
     return -1;
-
+  }
+    
+  // printf("error1\n");
   return filewrite(f, p, n);
 }
 

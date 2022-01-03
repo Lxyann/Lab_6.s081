@@ -8,6 +8,8 @@
 
 struct spinlock tickslock;
 uint ticks;
+//lab4 the re-entered flag.
+uint timeintcnt;
 
 extern char trampoline[], uservec[], userret[];
 
@@ -49,6 +51,8 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
+
+  
   
   if(r_scause() == 8){
     // system call
@@ -67,6 +71,20 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+    //lab 4
+    if(which_dev == 2 && (p->ticks != 0 || p->handler != 0)){ // timer interrupt
+      p->elasped_ticks += 1;
+      if(p->elasped_ticks >= p->ticks && timeintcnt == 0){ // It is time to execute handler.
+      // if(p->elasped_ticks >= p->ticks){ // It is time to execute handler.
+        // points to the handler's first instruction in user space.
+        memmove(myproc()->timeintframe, myproc()->trapframe, sizeof(struct trapframe));
+        p->trapframe->epc = (uint64)p->handler;
+        p->elasped_ticks = 0;
+        // printf("timeintcnt: %d\n",timeintcnt);
+        timeintcnt = 1;
+        // usertrapret();
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

@@ -1,0 +1,32 @@
+1. a2
+2. 52:	fce080e7          	jalr	-50(ra) # 1c <f>
+3. 34:	fd0080e7          	jalr	-48(ra) # 0 <g>
+4. 0x0000000000000a38
+5. 0x0000000000000a38+1584
+6. HE110 World 0x00726c64 
+little 0x0110-> big 0x1001, big 0x0110 -> little 0x1001 = 4097
+7. Since va_list, y='%d' is the value of next mem after the last params of va. bu why it is 1 or 7368?
+It is the initial random value of reg a2, like below.
+
+/*
+0000000000000a26 <printf>:
+
+void
+printf(const char *fmt, ...)
+{
+ a26:	7159                	addi	sp,sp,-112
+ a28:	f406                	sd	ra,40(sp)
+ a2a:	f022                	sd	s0,32(sp)
+ a2c:	1800                	addi	s0,sp,48
+ // here save a0 to a7
+ a2e:	fca43c23          	sd	a0,-40(s0)
+ a32:	e40c                sd	a1,8(s0)
+ a34:	e810                sd	a2,16(s0)
+ a36:	ec14                sd	a3,24(s0)
+ a38:	f018                sd	a4,32(s0)
+ a3a:	f41c                sd	a5,40(s0)
+ a3c:	03043823          	sd	a6,48(s0)
+ a40:	03143c23          	sd	a7,56(s0)
+  va_list ap;
+  ....
+*/

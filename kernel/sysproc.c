@@ -58,6 +58,8 @@ sys_sleep(void)
   int n;
   uint ticks0;
 
+  backtrace();
+
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
@@ -94,4 +96,31 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+//lab4
+
+uint64 sys_sigalarm(void){
+  int ticks;
+  uint64 proc;
+  if(argint(0, &ticks) < 0)
+    return -1;
+  if(argaddr(1, &proc) < 0)
+    return -1;
+  
+  myproc()->ticks = ticks;
+  myproc()->handler = (void (*)())proc;
+
+  // myproc()->timeintframe = myproc()->trapframe;
+  // memmove(myproc()->timeintframe, myproc()->trapframe, sizeof(struct trapframe));
+  return 0;
+}
+
+
+uint64 sys_sigreturn(void){
+  // printf("sigreturn!\n");
+  memmove(myproc()->trapframe, myproc()->timeintframe, sizeof(struct timeintframe));
+  //reset the re-entered flag.
+  timeintcnt = 0;
+  return 0;
 }

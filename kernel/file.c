@@ -136,14 +136,20 @@ filewrite(struct file *f, uint64 addr, int n)
 {
   int r, ret = 0;
 
-  if(f->writable == 0)
+  if(f->writable == 0){
+    // printf("error2\n");
     return -1;
+  }
+    
 
   if(f->type == FD_PIPE){
     ret = pipewrite(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
-    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
+    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write){
+      // printf("error3\n");
       return -1;
+    }
+      
     ret = devsw[f->major].write(1, addr, n);
   } else if(f->type == FD_INODE){
     // write a few blocks at a time to avoid exceeding
@@ -173,10 +179,13 @@ filewrite(struct file *f, uint64 addr, int n)
       i += r;
     }
     ret = (i == n ? n : -1);
+    // if(ret < 0){
+    //   printf("error4\n");
+    // }
   } else {
     panic("filewrite");
   }
-
+  
   return ret;
 }
 

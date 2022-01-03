@@ -18,6 +18,7 @@ printint(int fd, int xx, int base, int sgn)
   char buf[16];
   int i, neg;
   uint x;
+  // putc(fd, xx + '0');
 
   neg = 0;
   if(sgn && xx < 0){

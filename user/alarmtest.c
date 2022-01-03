@@ -18,13 +18,77 @@ void test2();
 void periodic();
 void slow_handler();
 
+
+int
+countfree()
+{
+  int fds[2];
+
+  if(pipe(fds) < 0){
+    printf("pipe() failed in countfree()\n");
+    exit(1);
+  }
+  
+  int pid = fork();
+
+  if(pid < 0){
+    printf("fork failed in countfree()\n");
+    exit(1);
+  }
+
+  if(pid == 0){
+    close(fds[0]);
+    
+    while(1){
+      uint64 a = (uint64) sbrk(4096);
+      if(a == 0xffffffffffffffff){
+        break;
+      }
+
+      // modify the memory to make sure it's really allocated.
+      *(char *)(a + 4096 - 1) = 1;
+
+      // report back one more page.
+      if(write(fds[1], "x", 1) != 1){
+        printf("write() failed in countfree()\n");
+        exit(1);
+      }
+    }
+
+    exit(0);
+  }
+
+  close(fds[1]);
+
+  int n = 0;
+  while(1){
+    char c;
+    int cc = read(fds[0], &c, 1);
+    if(cc < 0){
+      printf("read() failed in countfree()\n");
+      exit(1);
+    }
+    if(cc == 0)
+      break;
+    n += 1;
+  }
+
+  close(fds[0]);
+  wait((int*)0);
+  
+  return n;
+}
+
 int
 main(int argc, char *argv[])
 {
+  // printf("free0: %d\n", countfree());
   test0();
   test1();
   test2();
+  // printf("free1: %d\n", countfree());
   exit(0);
+  // printf("free1: %d\n", countfree());
 }
 
 volatile static int count;
@@ -86,6 +150,7 @@ test1()
   j = 0;
   sigalarm(2, periodic);
   for(i = 0; i < 500000000; i++){
+    // printf("i: %d j: %d\n", i, j);
     if(count >= 10)
       break;
     foo(i, &j);
@@ -100,6 +165,7 @@ test1()
     // occurred; another is that that registers may not be
     // restored correctly, causing i or j or the address ofj
     // to get an incorrect value.
+    printf("i: %d j: %d\n", i, j);
     printf("\ntest1 failed: foo() executed fewer times than it was called\n");
   } else {
     printf("test1 passed\n");
