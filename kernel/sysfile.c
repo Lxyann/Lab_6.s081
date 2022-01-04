@@ -75,6 +75,18 @@ sys_read(void)
 
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
+  
+  if(myproc()->sz >= p){
+    if(walkaddr(myproc()->pagetable, p) == 0){
+      printf("error: read address unallocated\n");
+    if(uvmalloc(myproc()->pagetable, p, p+1) == 0){
+      printf("error: read address alloc\n");
+    }
+    printf("read: if allocated: %p\n", walkaddr(myproc()->pagetable, p));
+    }
+  }
+  
+
   return fileread(f, p, n);
 }
 
@@ -88,6 +100,20 @@ sys_write(void)
   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argaddr(1, &p) < 0)
     return -1;
 
+  // char* tp = (char *)p;
+  // *(char **)tp = tp;
+
+  // return filewrite(f, (uint64)tp, n);
+  if(myproc()->sz >= p){
+    if(walkaddr(myproc()->pagetable, p) == 0){
+      printf("error: write address unallocated\n");
+    if(uvmalloc(myproc()->pagetable, p, p+1) == 0){
+      printf("error: write address alloc\n");
+    }
+      printf("write: if allocated: %p\n", walkaddr(myproc()->pagetable, p));
+    }
+  }
+  
   return filewrite(f, p, n);
 }
 
@@ -464,6 +490,17 @@ sys_pipe(void)
 
   if(argaddr(0, &fdarray) < 0)
     return -1;
+
+  if(myproc()->sz >= fdarray){
+    if(walkaddr(myproc()->pagetable, fdarray) == 0){
+      printf("error: pipe address unallocated\n");
+    if(uvmalloc(myproc()->pagetable, fdarray, fdarray+1) == 0){
+      printf("error: pipe address alloc\n");
+    }
+    printf("pipe: if allocated: %p\n", walkaddr(myproc()->pagetable, fdarray));
+    }
+  }
+  
   if(pipealloc(&rf, &wf) < 0)
     return -1;
   fd0 = -1;

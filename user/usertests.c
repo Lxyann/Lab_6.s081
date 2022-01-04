@@ -254,7 +254,7 @@ rwsbrk()
 
   fd = open("rwsbrk", O_CREATE|O_WRONLY);
   if(fd < 0){
-    printf("open(rwsbrk) failed\n");
+    printf("open (rwsbrk) failed\n");
     exit(1);
   }
   n = write(fd, (void*)(a+4096), 1024);
@@ -2398,6 +2398,7 @@ stacktest(char *s)
     char *sp = (char *) r_sp();
     sp -= PGSIZE;
     // the *sp should cause a trap.
+    printf("guard ad: %p\n", sp);
     printf("%s: stacktest: read below stack %p\n", *sp);
     exit(1);
   } else if(pid < 0){
@@ -2549,8 +2550,9 @@ execout(char *s)
       exit(1);
     } else if(pid == 0){
       // allocate all of memory.
+      uint64 a;
       while(1){
-        uint64 a = (uint64) sbrk(4096);
+        a = (uint64) sbrk(4096);
         if(a == 0xffffffffffffffffLL)
           break;
         *(char*)(a + 4096 - 1) = 1;
@@ -2558,6 +2560,7 @@ execout(char *s)
 
       // free a few pages, in order to let exec() make some
       // progress.
+      
       for(int i = 0; i < avail; i++)
         sbrk(-4096);
       

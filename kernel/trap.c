@@ -67,6 +67,28 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 13 || r_scause() == 15){ //lab5
+
+    char* sp = (char *)p->trapframe->sp;
+    if(r_stval() < PGROUNDUP((uint64)(sp - PGSIZE)) && r_stval() >= PGROUNDDOWN((uint64)(sp - PGSIZE))){
+      printf("error: current va %p reach stack guard page %p.\n", r_stval(), PGROUNDDOWN(r_sp()));
+      exit(-1);
+    }
+    if(r_stval() > p->sz){
+      // printf("error: current va %p is bigger than top of heap %p\n", r_stval(), p->sz);
+      exit(-1);
+    }
+    uint64 pg_down_va = PGROUNDDOWN(r_stval());
+    char* mem = kalloc();
+    if(mem == 0){
+      printf("error: no free mem for lazy alloc.\n");
+      exit(-1);
+    }
+    if(mappages(p->pagetable, pg_down_va, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U) != 0){
+      printf("error: mappage for lazy alloc.\n");
+      kfree(mem);
+      exit(-1);
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

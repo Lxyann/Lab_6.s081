@@ -58,7 +58,7 @@ sparse_memory_unmap(char *s)
       exit(1);
     } else if (pid == 0) {
       sbrk(-1L * REGION_SZ);
-      *(char **)i = i;
+      *(char **)i = i; //It should invoke an exception.
       exit(0);
     } else {
       int status;
