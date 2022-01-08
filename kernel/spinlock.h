@@ -7,3 +7,8 @@ struct spinlock {
   struct cpu *cpu;   // The cpu holding the lock.
 };
 
+
+struct kernelmem{
+  struct spinlock lock;
+  struct run *freelist;
+};

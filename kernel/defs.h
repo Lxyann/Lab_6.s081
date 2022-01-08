@@ -63,6 +63,10 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+uint64          rela_idx(uint64 pa);
+uint64          freemem();
+void *          cow_kalloc(void);
+void            cow_kfree(void *pa);
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -172,6 +176,11 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 
+//lab6
+uint64          walkpte(pagetable_t pagetable, uint64 va);
+pte_t*          walk(pagetable_t pagetable, uint64 va, int alloc);
+void            cow_uvmunmap(pagetable_t, uint64, uint64, int);
+
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
@@ -185,3 +194,6 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+//lab6
+// uint16 refcntarr[(PHYSTOP - KERNBASE + 1) / 4096];

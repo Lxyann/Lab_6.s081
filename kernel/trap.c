@@ -11,6 +11,10 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+//lab6
+extern int refcntarr[];
+extern struct spinlock cowlock;
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -20,6 +24,8 @@ void
 trapinit(void)
 {
   initlock(&tickslock, "time");
+  //lab6
+  initlock(&cowlock, "cow");
 }
 
 // set up to take exceptions and traps while in the kernel.
@@ -33,6 +39,8 @@ trapinithart(void)
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
+
+
 void
 usertrap(void)
 {
@@ -67,6 +75,51 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  // } else if(r_scause() == 12 || r_scause() == 13 || r_scause() == 15){
+  } else if(r_scause() == 15){
+    // printf("\n-------------------usertrap()--------------------\n");
+    // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    //lab6
+    uint64 va = r_stval();
+    pte_t *pte;
+    uint64 pa;
+ 
+    if((pte = walk(p->pagetable, va, 0)) == 0){
+      printf("error: walk for page fault.\n");
+      exit(-1);
+    }
+
+    // printf("usertrap(): pte flags & pte_cow & pte_u & pte_r: %p\n", PTE_FLAGS(*pte) & (PTE_COW | PTE_U | PTE_R));
+
+    pa = PTE2PA(*pte);
+
+    if(PTE_FLAGS(*pte) & (PTE_COW | PTE_U)){
+
+      char *mem;
+      if((mem = cow_kalloc()) == 0){
+        printf("error: there is no free mem for cow trap.\n");
+        exit(-1);
+      }
+      //copy old page where va is in it to the new page.
+      memmove(mem, (void *)PGROUNDDOWN(pa), PGSIZE);
+      //unmap shared page.
+
+      pte_t temp_pte = *pte; //uvmunmap will set 0 to *pte;
+      uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 1);
+      // *pte = 0;
+      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, (~PTE_COW & PTE_FLAGS(temp_pte)) | PTE_W) != 0){
+        printf("error: map page fault for cow trap.\n");
+        kfree(mem);
+        exit(-1);
+      }
+
+    } else {
+      printf("unknown page fault, it should be the cow page fault.\n");
+      exit(-1);
+    }
+    //lab6
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -82,6 +135,122 @@ usertrap(void)
 
   usertrapret();
 }
+
+// void
+// usertrap(void)
+// {
+//   int which_dev = 0;
+
+//   if((r_sstatus() & SSTATUS_SPP) != 0)
+//     panic("usertrap: not from user mode");
+
+//   // send interrupts and exceptions to kerneltrap(),
+//   // since we're now in the kernel.
+//   w_stvec((uint64)kernelvec);
+
+//   struct proc *p = myproc();
+  
+//   // save user program counter.
+//   p->trapframe->epc = r_sepc();
+  
+//   if(r_scause() == 8){
+//     // system call
+
+//     if(p->killed)
+//       exit(-1);
+
+//     // sepc points to the ecall instruction,
+//     // but we want to return to the next instruction.
+//     p->trapframe->epc += 4;
+
+//     // an interrupt will change sstatus &c registers,
+//     // so don't enable until done with those registers.
+//     intr_on();
+
+//     syscall();
+//   } else if((which_dev = devintr()) != 0){
+//     // ok
+//   // } else if(r_scause() == 12 || r_scause() == 13 || r_scause() == 15){
+//   } else if(r_scause() == 15){
+//     // printf("\n-------------------usertrap()--------------------\n");
+//     // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+//     // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+//     //lab6
+//     acquire(&cowlock);
+//     uint64 va = r_stval();
+//     pte_t *pte;
+//     uint64 pa;
+ 
+//     if((pte = walk(p->pagetable, va, 0)) == 0){
+//       printf("error: walk for page fault.\n");
+//       exit(-1);
+//     }
+
+//     // printf("usertrap(): pte flags & pte_cow & pte_u & pte_r: %p\n", PTE_FLAGS(*pte) & (PTE_COW | PTE_U | PTE_R));
+
+//     pa = PTE2PA(*pte);
+
+//     if(PTE_FLAGS(*pte) & (PTE_COW | PTE_U)){
+
+//       if(refcntarr[rela_idx(pa)] == 1){
+//         // set the write bit of pte.
+//         // here should realloc...
+//         *pte = (*pte & ~PTE_COW) | PTE_W;
+//         // printf("trap: parent process only change the perm flag, idx %d.\n", rela_idx(pa));
+//       } else if (refcntarr[rela_idx(pa)] == 0){
+//         // printf("error: refer count should be greater than 1, but get 0, pg idx: %d.\n", rela_idx(pa));
+//         exit(-1);
+//       } else {
+//         // printf("trap: begin copy cow page.\n");
+//         // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+//         // printf("            sepc=%p stval=%p pa=%p\n", r_sepc(), r_stval(), pa);
+
+//         char *mem;
+//         if((mem = kalloc()) == 0){
+//           printf("error: there is no free mem for cow trap.\n");
+//           release(&cowlock);
+//           exit(-1);
+//         }
+//         refcntarr[rela_idx((uint64)mem)] = 1;
+//         //copy old page where va is in it to the new page.
+//         memmove(mem, (void *)PGROUNDDOWN(pa), PGSIZE);
+//         //unmap shared page.
+
+//         pte_t temp_pte = *pte; //uvmunmap will set 0 to *pte;
+//         uvmunmap(p->pagetable, PGROUNDDOWN(va), 1, 1);
+//         // *pte = 0;
+//         if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, (~PTE_COW & PTE_FLAGS(temp_pte)) | PTE_W) != 0){
+//           printf("error: map page fault for cow trap.\n");
+//           kfree(mem);
+//           release(&cowlock);
+//           exit(-1);
+//         }
+
+//         // refcntarr[rela_idx(pa)] -= 1;
+//       }
+
+//     } else {
+//       printf("unknown page fault, it should be the cow page fault.\n");
+//       exit(-1);
+//     }
+//     //lab6
+//     release(&cowlock);
+
+//   } else {
+//     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+//     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+//     p->killed = 1;
+//   }
+
+//   if(p->killed)
+//     exit(-1);
+
+//   // give up the CPU if this is a timer interrupt.
+//   if(which_dev == 2)
+//     yield();
+
+//   usertrapret();
+// }
 
 //
 // return to user space

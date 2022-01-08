@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -15,6 +16,11 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+//lab6
+extern int refcntarr[];
+extern struct spinlock cowlock;
+// struct spinlock copyout_cowlock;
+extern struct kernelmem kmem;
 /*
  * create a direct-map page table for the kernel.
  */
@@ -111,6 +117,24 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
+uint64
+walkpte(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+
+  if(va >= MAXVA)
+    return 0;
+
+  pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+  if((*pte & PTE_U) == 0)
+    return 0;
+  return *pte;
+}
+
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -170,12 +194,19 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+
+// Cow update: uvmunmap will try its best to free the dst pages.
+// e.g.: for user pages, if its refcnt is one, uvmunmap will free it.
+//       for trampoline and trapframe page, refcnt is 0. the page  will be freed directly.
+//       for stack guard page, if its refcnt is one, uvmunmap will free it.
+
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
 
+  
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
@@ -186,13 +217,104 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
-    if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+
+    //lab6
+
+    uint64 pa = PTE2PA(*pte);
+    // printf("uvmunmap va: %p, cur a: %p, pa: %p, cnt %d, idx %d\n", va, a, PTE2PA(*pte), refcntarr[rela_idx(PTE2PA(*pte))], rela_idx(PTE2PA(*pte)));
+    
+    if (PTE_FLAGS(*pte) & (PTE_U | PTE_COW)){
+      // if(do_free)
+      
+      cow_kfree((void*)pa);
+      
+      // printf("uvmunmap normal user page.\n");
+      *pte = 0;
+      continue;
+    } else if (PTE_FLAGS(*pte) & (PTE_SG | PTE_COW)) {
+      // printf("uvmunmap stack guard page.\n");
+      // if(do_free)
+      
+      cow_kfree((void*)pa);
+      *pte = 0;
+      continue;
+    } else {
+      // trampoline or trapframe page or kernel page.
+      if(do_free){
+        uint64 pa = PTE2PA(*pte);
+        kfree((void*)pa);
+      }
+      *pte = 0;
     }
-    *pte = 0;
   }
 }
+
+
+
+
+
+// void
+// uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+// {
+//   uint64 a;
+//   pte_t *pte;
+
+  
+//   if((va % PGSIZE) != 0)
+//     panic("uvmunmap: not aligned");
+
+//   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
+//     if((pte = walk(pagetable, a, 0)) == 0)
+//       panic("uvmunmap: walk");
+//     if((*pte & PTE_V) == 0)
+//       panic("uvmunmap: not mapped");
+//     if(PTE_FLAGS(*pte) == PTE_V)
+//       panic("uvmunmap: not a leaf");
+
+//     //lab6
+
+//     uint64 pa = PTE2PA(*pte);
+//     // printf("uvmunmap va: %p, cur a: %p, pa: %p, cnt %d, idx %d\n", va, a, PTE2PA(*pte), refcntarr[rela_idx(PTE2PA(*pte))], rela_idx(PTE2PA(*pte)));
+//     if(PTE_FLAGS(*pte) & PTE_U ){ // normal user pages.
+//       // printf("uvmunmap normal user page.\n");
+//       if(refcntarr[rela_idx(pa)] == 0){
+//         panic("unmap a unrefered page.\n");
+//       } else if(refcntarr[rela_idx(pa)] > 0){
+//         // refcntarr[rela_idx(pa)] -= 1;
+        
+//         if(refcntarr[rela_idx(pa)] >= 2){
+//           // *pte = 0;
+//           refcntarr[rela_idx(pa)] -= 1;
+//           // continue;
+//         } else { // == 1
+//           refcntarr[rela_idx(pa)] = 0;
+//         }
+
+//       } else {
+//         printf("error: refcnt is less than zero: %d.\n", refcntarr[rela_idx(pa)]);
+//         panic("uvmunmap: refcnt is less than zero\n");
+//       }
+//     }else if(refcntarr[rela_idx(pa)] == 0){ // trampoline and trapframe page.
+//       //ok
+//       // printf("uvmunmap trampoline or trapframe page.\n");
+//     }else if(refcntarr[rela_idx(pa)] >= 1){ // stack guard.
+//       refcntarr[rela_idx(pa)] -= 1;
+//       // printf("uvmunmap stack guard pages.\n");
+//     }else{
+//       panic("uvmunmap: error, there should be no other page types.\n");
+//     }
+
+
+
+//     if(do_free && refcntarr[rela_idx(PTE2PA(*pte))] == 0){
+//     // if(do_free){
+//       uint64 pa = PTE2PA(*pte);
+//       kfree((void*)pa);
+//     }
+//     *pte = 0;
+//   }
+// }
+
 
 // create an empty user page table.
 // returns 0 if out of memory.
@@ -217,7 +339,10 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 
   if(sz >= PGSIZE)
     panic("inituvm: more than a page");
-  mem = kalloc();
+  mem = cow_kalloc();
+  //lab6: init process cnt should be initiated to 1.
+  // refcntarr[rela_idx((uint64)mem)] = 1;
+  printf("uvminit: first pa ref cnt: %d idx: %d\n", refcntarr[rela_idx((uint64)mem)], rela_idx((uint64)mem));
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
@@ -236,13 +361,18 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
-    mem = kalloc();
+    mem = cow_kalloc();
     if(mem == 0){
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+    //lab6
+    // printf("malloc: pa idx %d\n", rela_idx((uint64)mem));
+    // refcntarr[rela_idx((uint64)mem)] = 1;
+    //---
     memset(mem, 0, PGSIZE);
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+      printf("uvmalloc map failed.\n");
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
@@ -255,6 +385,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 // need to be less than oldsz.  oldsz can be larger than the actual
 // process size.  Returns the new process size.
+
+
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -268,6 +400,21 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   return newsz;
 }
+
+
+// uint64
+// uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+// {
+//   if(newsz >= oldsz)
+//     return oldsz;
+
+//   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
+//     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+//     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
+//   }
+
+//   return newsz;
+// }
 
 // Recursively free page-table pages.
 // All leaf mappings must already have been removed.
@@ -283,6 +430,7 @@ freewalk(pagetable_t pagetable)
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
+      printf("leaf pa idx: %d cnt: %d\n", rela_idx(PTE2PA(pte)), refcntarr[rela_idx(PTE2PA(pte))]);
       panic("freewalk: leaf");
     }
   }
@@ -294,6 +442,7 @@ freewalk(pagetable_t pagetable)
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
+  // printf("-----------------Entry uvmfree pgs = %d------------------\n", PGROUNDUP(sz)/PGSIZE);
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
@@ -311,29 +460,66 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
+  
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    //lab6: increase the ref cnt.
+    acquire(&kmem.lock);
+    refcntarr[rela_idx(pa)] += 1;
+    release(&kmem.lock);
+
+    flags = (PTE_FLAGS(*pte) & ~PTE_W) | PTE_COW;
+    //set parent pte without PTE_W flag.
+    *pte = (*pte & ~PTE_W) | PTE_COW;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      printf("error: uvmcopy mappages failed.\n");
       goto err;
     }
+
   }
   return 0;
 
  err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
+  panic("uvmcopy\n");
   return -1;
 }
+
+
+// int
+// uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+// {
+//   pte_t *pte;
+//   uint64 pa, i;
+//   uint flags;
+//   char *mem;
+
+//   for(i = 0; i < sz; i += PGSIZE){
+//     if((pte = walk(old, i, 0)) == 0)
+//       panic("uvmcopy: pte should exist");
+//     if((*pte & PTE_V) == 0)
+//       panic("uvmcopy: page not present");
+//     pa = PTE2PA(*pte);
+//     flags = PTE_FLAGS(*pte);
+//     if((mem = kalloc()) == 0)
+//       goto err;
+//     memmove(mem, (char*)pa, PGSIZE);
+//     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+//       kfree(mem);
+//       goto err;
+//     }
+//   }
+//   return 0;
+
+//  err:
+//   uvmunmap(new, 0, i / PGSIZE, 1);
+//   return -1;
+// }
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
@@ -346,21 +532,58 @@ uvmclear(pagetable_t pagetable, uint64 va)
   if(pte == 0)
     panic("uvmclear");
   *pte &= ~PTE_U;
+  *pte |= PTE_SG;
+  //lab6 regard the guard page as kernel page.
+  // refcntarr[rela_idx(PTE2PA(*pte))] = 0;
 }
 
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+
+
+
+
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t *pte;
+  
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(pa0 == 0){
       return -1;
+    }
+
+    //lab6
+    if((pte = walk(pagetable, va0, 0)) == 0){
+      panic("copy out walk failed.\n");
+    }
+    if(PTE_FLAGS(*pte) & (PTE_COW | PTE_U)){
+      // printf("begin: copyout in a cow page, ref cnt: %d.\n", refcntarr[rela_idx((uint64)pa0)]);
+      char *mem = cow_kalloc();
+      if(mem == 0){
+        printf("error: kalloc mem failed in copy out.\n");
+        // exit(-1);
+        return -1;
+      }
+
+      memmove(mem, (void *)pa0, PGSIZE);
+      pte_t temp_pte = *pte; //uvmunmap will set 0 to *pte;
+      uvmunmap(pagetable, va0, 1, 1);
+      if(mappages(pagetable, va0, PGSIZE, (uint64)mem, (PTE_FLAGS(temp_pte) & ~PTE_COW) | PTE_W) != 0){
+        printf("error: map page failed in copy out.\n");
+        // exit(-1);
+        return -1;
+      }
+      // assign the memmove dst pa.
+      pa0 = (uint64)mem;
+    }
+    
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -372,6 +595,91 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   }
   return 0;
 }
+
+
+
+// int
+// copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
+// {
+//   uint64 n, va0, pa0;
+//   pte_t *pte;
+  
+
+//   while(len > 0){
+//     va0 = PGROUNDDOWN(dstva);
+//     pa0 = walkaddr(pagetable, va0);
+//     if(pa0 == 0){
+//       return -1;
+//     }
+
+//     //lab6
+//     if((pte = walk(pagetable, va0, 0)) == 0){
+//       panic("copy out walk failed.\n");
+//     }
+//     if(PTE_FLAGS(*pte) & (PTE_COW | PTE_U)){
+//       acquire(&cowlock);
+//       if(refcntarr[rela_idx((uint64)pa0)] == 0){
+//         panic("copyout error cow page.\n");
+//       }else if(refcntarr[rela_idx((uint64)pa0)] >= 2){
+//         // printf("begin: copyout in a cow page, ref cnt: %d.\n", refcntarr[rela_idx((uint64)pa0)]);
+//         char *mem = cow_kalloc();
+//         if(mem == 0){
+//           printf("error: kalloc mem failed in copy out.\n");
+//           release(&cowlock);
+//           exit(-1);
+//         }
+
+//         memmove(mem, (void *)pa0, PGSIZE);
+//         pte_t temp_pte = *pte; //uvmunmap will set 0 to *pte;
+//         uvmunmap(pagetable, va0, 1, 1);
+//         if(mappages(pagetable, va0, PGSIZE, (uint64)mem, (PTE_FLAGS(temp_pte) & ~PTE_COW) | PTE_W) != 0){
+//           printf("error: map page failed in copy out.\n");
+//           release(&cowlock);
+//           exit(-1);
+//         }
+//         // assign the memmove dst pa.
+//         pa0 = (uint64)mem;
+//       }else if(refcntarr[rela_idx((uint64)pa0)] == 1){
+//         *pte = (*pte & ~PTE_COW) | PTE_W;
+//         // printf("copyout only one refcnt\n");
+//       }
+//       release(&cowlock);
+//     }
+    
+
+//     n = PGSIZE - (dstva - va0);
+//     if(n > len)
+//       n = len;
+//     memmove((void *)(pa0 + (dstva - va0)), src, n);
+
+//     len -= n;
+//     src += n;
+//     dstva = va0 + PGSIZE;
+//   }
+//   return 0;
+// }
+
+// int
+// copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
+// {
+//   uint64 n, va0, pa0;
+
+//   while(len > 0){
+//     va0 = PGROUNDDOWN(dstva);
+//     pa0 = walkaddr(pagetable, va0);
+//     if(pa0 == 0)
+//       return -1;
+//     n = PGSIZE - (dstva - va0);
+//     if(n > len)
+//       n = len;
+//     memmove((void *)(pa0 + (dstva - va0)), src, n);
+
+//     len -= n;
+//     src += n;
+//     dstva = va0 + PGSIZE;
+//   }
+//   return 0;
+// }
 
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.

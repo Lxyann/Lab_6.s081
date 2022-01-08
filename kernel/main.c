@@ -3,8 +3,16 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
+#include "spinlock.h"
 
 volatile static int started = 0;
+
+//lab6
+int refcntarr[(PHYSTOP - KERNBASE) / PGSIZE];
+struct spinlock cowlock;
+
+
+struct kernelmem kmem;
 
 // start() jumps here in supervisor mode on all CPUs.
 void

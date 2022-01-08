@@ -1060,21 +1060,25 @@ sharedfd(char *s)
   int fd, pid, i, n, nc, np;
   enum { N = 1000, SZ=10};
   char buf[SZ];
-
+  printf("freemem 1: %d\n", freemem());
   unlink("sharedfd");
   fd = open("sharedfd", O_CREATE|O_RDWR);
   if(fd < 0){
     printf("%s: cannot open sharedfd for writing", s);
     exit(1);
   }
+  printf("freemem 2: %d\n", freemem());
   pid = fork();
+  // printf("freemem 2.5: %d\n", freemem());
   memset(buf, pid==0?'c':'p', sizeof(buf));
+  // printf("freemem 2.8: %d\n", freemem());
   for(i = 0; i < N; i++){
     if(write(fd, buf, sizeof(buf)) != sizeof(buf)){
       printf("%s: write sharedfd failed\n", s);
       exit(1);
     }
   }
+  printf("freemem 3: %d\n", freemem());
   if(pid == 0) {
     exit(0);
   } else {
@@ -1083,13 +1087,14 @@ sharedfd(char *s)
     if(xstatus != 0)
       exit(xstatus);
   }
-  
+  printf("freemem 4: %d\n", freemem());
   close(fd);
   fd = open("sharedfd", 0);
   if(fd < 0){
     printf("%s: cannot open sharedfd for reading\n", s);
     exit(1);
   }
+  printf("freemem 5: %d\n", freemem());
   nc = np = 0;
   while((n = read(fd, buf, sizeof(buf))) > 0){
     for(i = 0; i < sizeof(buf); i++){
@@ -1099,8 +1104,10 @@ sharedfd(char *s)
         np++;
     }
   }
+  printf("freemem 6: %d\n", freemem());
   close(fd);
   unlink("sharedfd");
+  printf("freemem 7: %d\n", freemem());
   if(nc == N*SZ && np == N*SZ){
     exit(0);
   } else {

@@ -110,7 +110,7 @@ fileread(struct file *f, uint64 addr, int n)
 
   if(f->readable == 0)
     return -1;
-
+  // printf("read readable\n");
   if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
   } else if(f->type == FD_DEVICE){
@@ -125,7 +125,6 @@ fileread(struct file *f, uint64 addr, int n)
   } else {
     panic("fileread");
   }
-
   return r;
 }
 
