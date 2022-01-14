@@ -18,17 +18,36 @@ struct run {
   struct run *next;
 };
 
+
+
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
+
+// struct {
+//   struct spinlock lock;
+//   struct run *freelist;
+// } kmem;
+
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  
+  for(int i = 0; i < NCPU; i++){
+    // printf("i: %d\n", i);
+    initlock(&(kmem[i].lock), "kmem");
+  }
   freerange(end, (void*)PHYSTOP);
 }
+
+// void
+// kinit()
+// {
+//   initlock(&kmem.lock, "kmem");
+//   freerange(end, (void*)PHYSTOP);
+// }
 
 void
 freerange(void *pa_start, void *pa_end)
@@ -39,6 +58,9 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
+
+
+
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
@@ -46,8 +68,11 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
-  struct run *r;
+  push_off(); // turn off intrrputs.
 
+  struct run *r;
+  int cid = cpuid();
+  // printf("free cid: %d\n", cid);
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
@@ -56,11 +81,36 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmem[cid].lock);
+  r->next = kmem[cid].freelist;
+  kmem[cid].freelist = r;
+  release(&kmem[cid].lock);
+
+  pop_off(); // turn on intrrputs.
 }
+
+
+// void
+// kfree(void *pa)
+// {
+//   struct run *r;
+
+//   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+//     panic("kfree");
+
+//   // Fill with junk to catch dangling refs.
+//   memset(pa, 1, PGSIZE);
+
+//   r = (struct run*)pa;
+
+//   acquire(&kmem.lock);
+//   r->next = kmem.freelist;
+//   kmem.freelist = r;
+//   release(&kmem.lock);
+// }
+
+
+
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
@@ -68,15 +118,55 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-  struct run *r;
+  push_off(); // turn off intrrputs.
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  struct run *r;
+  int cid = cpuid();
+  // printf("alloc cid: %d\n", cid);
+  acquire(&kmem[cid].lock);
+  r = kmem[cid].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem[cid].freelist = r->next;
+  else { // steal from other cpu's free list.
+    // my code.
+    for (int i = 0; i < NCPU; i++) {
+      if (i == cid)
+        continue;
+      acquire(&kmem[i].lock);
+      r = kmem[i].freelist;
+      if (r) {
+        kmem[i].freelist = r->next;
+        release(&kmem[i].lock);
+        break;
+      }
+      release(&kmem[i].lock);
+    }
+  }
+  release(&kmem[cid].lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+  pop_off(); // turn on intrrputs.
+
   return (void*)r;
 }
+
+
+
+
+// void *
+// kalloc(void)
+// {
+//   struct run *r;
+
+//   acquire(&kmem.lock);
+//   r = kmem.freelist;
+//   if(r)
+//     kmem.freelist = r->next;
+//   release(&kmem.lock);
+
+//   if(r)
+//     memset((char*)r, 5, PGSIZE); // fill with junk
+//   return (void*)r;
+// }

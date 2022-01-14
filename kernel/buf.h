@@ -8,5 +8,9 @@ struct buf {
   struct buf *prev; // LRU cache list
   struct buf *next;
   uchar data[BSIZE];
+
+  //lab8
+  uint ticks;
+  // struct buf *hashnext;
 };
 

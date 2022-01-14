@@ -47,7 +47,7 @@ binit(void)
   struct buf *b;
 
   for(int i = 0; i < NBUCKET; i++){
-    initlock(&bcache.hashlock[i], "bcache.bucket");
+    initlock(&bcache.hashlock[i], "hash bcache");
   }
 
   initlock(&bcache.lock, "bcache");
@@ -77,7 +77,7 @@ bget(uint dev, uint blockno)
   // Is the block already cached?
   for(b = bcache.head[i].next; b != &bcache.head[i]; b = b->next){
     if(b->dev == dev && b->blockno == blockno){
-      // printf("cache!\n");
+      printf("cache!\n");
       b->refcnt++;
       release(&bcache.hashlock[i]);
       acquiresleep(&b->lock);
@@ -109,12 +109,6 @@ bget(uint dev, uint blockno)
     b->valid = 0;
     b->refcnt = 1;
     // move b to head.
-    if(b->prev != 0 && b->next != 0){
-      b->next->prev = b->prev;
-      b->prev->next = b->next;
-    }
-    
-
     b->next = bcache.head[i].next;
     b->prev = &bcache.head[i];
     bcache.head[i].next->prev = b;
@@ -161,32 +155,20 @@ brelse(struct buf *b)
   if(!holdingsleep(&b->lock))
     panic("brelse");
   
-  b->refcnt--;
-  b->ticks = ticks;
+  int i = b->blockno % NBUCKET;
+
   releasesleep(&b->lock);
 
+  acquire(&bcache.hashlock[i]);
+  b->refcnt--;
+  if (b->refcnt == 0) {
+    // no one is waiting for it.
+    b->next->prev = b->prev;
+    b->prev->next = b->next;
+  }
+  b->ticks = ticks;
+  release(&bcache.hashlock[i]);
 }
-
-
-// void
-// brelse(struct buf *b)
-// {
-//   if(!holdingsleep(&b->lock))
-//     panic("brelse");
-  
-//   int i = b->blockno % NBUCKET;
-
-//   releasesleep(&b->lock);
-
-//   acquire(&bcache.hashlock[i]);
-//   b->refcnt--;
-//   if (b->refcnt == 0) {
-//     // no one is waiting for it.
-//     // ok
-//   }
-//   b->ticks = ticks;
-//   release(&bcache.hashlock[i]);
-// }
 
 void
 bpin(struct buf *b) {
