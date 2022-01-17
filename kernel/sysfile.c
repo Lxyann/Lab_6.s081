@@ -130,16 +130,17 @@ sys_link(void)
     end_op();
     return -1;
   }
-
+  // lock and load inode from disk.
   ilock(ip);
   if(ip->type == T_DIR){
+    // unlock and attempt to free on-disk inode.
     iunlockput(ip);
     end_op();
     return -1;
   }
 
   ip->nlink++;
-  iupdate(ip);
+  iupdate(ip); //Copy a modified in-memory inode to disk.
   iunlock(ip);
 
   if((dp = nameiparent(new, name)) == 0)
@@ -294,6 +295,8 @@ sys_open(void)
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
+  
+
 
   begin_op();
 
@@ -308,13 +311,44 @@ sys_open(void)
       end_op();
       return -1;
     }
-    ilock(ip);
+    ilock(ip); //-
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
       return -1;
     }
   }
+  //lab9
+  uint depth = 0;
+  while(ip->type == T_SYMLINK){
+    // printf("depth: %d\n", depth);
+    if(omode & O_NOFOLLOW)
+      break;
+    if(depth > 10){
+      printf("reach the depth threshould: %d.\n", depth);
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    if(readi(ip, 0, (uint64)path, 0, ip->size) == 0){
+      printf("read soft link film failed.\n");
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    iunlockput(ip);
+
+    printf("%s\n", path);
+    if((ip = namei(path)) == 0){
+      printf("open real film failed in softlink.\n");
+      // iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    ilock(ip);
+    depth++;
+  }
+  //
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
@@ -350,6 +384,75 @@ sys_open(void)
 
   return fd;
 }
+
+
+// uint64
+// sys_open(void)
+// {
+//   char path[MAXPATH];
+//   int fd, omode;
+//   struct file *f;
+//   struct inode *ip;
+//   int n;
+
+//   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
+//     return -1;
+
+//   begin_op();
+
+//   if(omode & O_CREATE){
+//     ip = create(path, T_FILE, 0, 0);
+//     if(ip == 0){
+//       end_op();
+//       return -1;
+//     }
+//   } else {
+//     if((ip = namei(path)) == 0){
+//       end_op();
+//       return -1;
+//     }
+//     ilock(ip);
+//     if(ip->type == T_DIR && omode != O_RDONLY){
+//       iunlockput(ip);
+//       end_op();
+//       return -1;
+//     }
+//   }
+
+//   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+//     iunlockput(ip);
+//     end_op();
+//     return -1;
+//   }
+
+//   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+//     if(f)
+//       fileclose(f);
+//     iunlockput(ip);
+//     end_op();
+//     return -1;
+//   }
+
+//   if(ip->type == T_DEVICE){
+//     f->type = FD_DEVICE;
+//     f->major = ip->major;
+//   } else {
+//     f->type = FD_INODE;
+//     f->off = 0;
+//   }
+//   f->ip = ip;
+//   f->readable = !(omode & O_WRONLY);
+//   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+
+//   if((omode & O_TRUNC) && ip->type == T_FILE){
+//     itrunc(ip);
+//   }
+
+//   iunlock(ip);
+//   end_op();
+
+//   return fd;
+// }
 
 uint64
 sys_mkdir(void)
@@ -483,4 +586,184 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+
+
+
+// // Create the path new as a link to the same inode as old.
+// uint64
+// sys_link(void)
+// {
+//   char name[DIRSIZ], new[MAXPATH], old[MAXPATH];
+//   struct inode *dp, *ip;
+
+//   if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+//     return -1;
+
+//   begin_op();
+//   if((ip = namei(old)) == 0){
+//     end_op();
+//     return -1;
+//   }
+
+//   ilock(ip);
+//   if(ip->type == T_DIR){
+//     iunlockput(ip);
+//     end_op();
+//     return -1;
+//   }
+
+//   ip->nlink++;
+//   iupdate(ip);
+//   iunlock(ip);
+
+//   if((dp = nameiparent(new, name)) == 0)
+//     goto bad;
+//   ilock(dp);
+//   if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
+//     iunlockput(dp);
+//     goto bad;
+//   }
+//   iunlockput(dp);
+//   iput(ip);
+
+//   end_op();
+
+//   return 0;
+
+// bad:
+//   ilock(ip);
+//   ip->nlink--;
+//   iupdate(ip);
+//   iunlockput(ip);
+//   end_op();
+//   return -1;
+// }
+
+// //lab9
+// uint64 sys_symlink(void)
+// {
+//   //soft link.
+//   char name[DIRSIZ], old[MAXPATH], new[MAXPATH];
+//   struct inode *dp, *ip;
+
+//   if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+//     return -1;
+  
+//   begin_op();
+//   if((ip = namei(old)) == 0){
+//     end_op();
+//     return -1;
+//   }
+
+//   ilock(ip);
+//   if(ip->type == T_DIR){
+//     iunlockput(ip);
+//     end_op();
+//     return -1;
+//   }
+
+//   ip->nlink++;
+//   iupdate(ip);
+//   iunlock(ip);
+
+//   // dir and its containing files must in the same fs e.g. device.
+//   if((dp = nameiparent(new, name)) == 0)
+//     goto bad;
+//   ilock(dp);
+
+//   struct inode *slip = ialloc(dp->dev, T_SYMLINK);
+//   // slip->type = T_SYMLINK;
+//   ilock(slip);
+//   printf("here.\n");
+//   if(writei(slip, 0, (uint64)old, 0, sizeof(old)) != sizeof(old))
+//     panic("writei in symbol link.\n");
+  
+//   // adding symbol link to dir inode dp.
+//   if(dirlink(dp, name, slip->inum) < 0){
+//     iunlockput(dp);
+//     iunlockput(slip);
+//     goto bad;
+//   }
+
+//   iunlockput(slip);
+//   iunlockput(dp);
+//   iput(ip);
+
+//   end_op();
+
+//   return 0;
+
+// bad:
+//   printf("sys_symlink bad.\n");
+//   ilock(ip);
+//   ip->nlink--;
+//   iupdate(ip);
+//   iunlockput(ip);
+//   // iunlockput(slip);
+//   end_op();
+//   return -1;
+// }
+
+
+uint64 sys_symlink(void)
+{
+  //soft link.
+  char old[MAXPATH], new[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+  
+  begin_op();
+  if((ip = namei(old)) == 0){
+    printf("symbolic link to not exist film.\n");
+    // end_op();
+    // return -1;
+  }
+
+  if(ip)
+    ilock(ip);
+
+  if(ip && ip->type == T_DIR){
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  if(ip){
+    ip->nlink++;
+    iupdate(ip);
+    iunlock(ip);
+    iput(ip);
+  }
+  
+
+  // dir and its containing files must in the same fs e.g. device.
+  struct inode *slip = create(new, T_SYMLINK, 0, 0);
+  // ilock(slip);
+  if(slip == 0){
+    printf("failed to create symbolic link film.\n");
+    // iunlockput(slip);
+    end_op();
+    return -1;
+  }
+
+  // iunlockput(slip);
+  // slip->type = T_SYMLINK;
+  // ilock(slip);
+  if(writei(slip, 0, (uint64)old, 0, sizeof(old)) != sizeof(old))
+    panic("writei in symbol link.\n");
+  
+  // adding symbol link to dir inode dp.
+
+
+  iunlockput(slip);
+
+
+  end_op();
+
+  return 0;
+
 }
