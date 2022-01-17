@@ -99,7 +99,6 @@ bget(uint dev, uint blockno)
   
 
   //move buf to the target hash table.
-  //the buf has been removed from other hash table.
   
   if(idx != -1){ // find out a free buf.
     b = &bcache.buf[idx];
