@@ -172,6 +172,9 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 
+//lab10
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
+
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
@@ -185,3 +188,10 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+
+// lab10 
+// mman.c
+uint64          mmap(uint64 addr, uint length, int prot, int flags, int fd, int offset);
+uint64          munmap(uint64 addr, uint length);
+struct vma *    getvma(struct proc *p, uint64 addr);

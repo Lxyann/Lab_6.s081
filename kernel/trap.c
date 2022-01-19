@@ -5,6 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+//lab10
+#include "sleeplock.h"
+#include "fs.h"
+#include "fcntl.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +72,59 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+
+    // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+
+    uint64 pgdwnva = PGROUNDDOWN(r_stval());
+    if(pgdwnva >= TRAPFRAME){
+      printf("page fault: current pgaddr: %p is greater than TRAPFRAME: %p\n", pgdwnva, TRAPFRAME);
+      exit(-1);
+    }
+
+    struct vma *vp;
+    if((vp = getvma(p, pgdwnva)) == 0){
+      printf("page fault: no such vma.\n");
+      exit(-1);
+    }
+
+    char *mem;
+    if((mem = kalloc()) == 0){
+      printf("page fault: no free mem for alloc.\n");
+      exit(-1);
+    }
+    memset(mem, 0, PGSIZE); // init with zeros, defend from the 1.5 page test case.
+
+    int pte_flags = PTE_X | PTE_U;
+    if(vp->prot & PROT_READ)
+      pte_flags |= PTE_R;
+    if(vp->prot & PROT_WRITE)
+      pte_flags |= PTE_W;
+    
+    if(r_scause() == 15)
+      pte_flags |= PTE_D;
+
+    if(mappages(p->pagetable, pgdwnva, PGSIZE, (uint64)mem, pte_flags) < 0){
+      printf("page fault: mappages fault for mmap.\n");
+      kfree(mem);
+      exit(-1);
+    }
+
+    struct inode *ip = vp->fp->ip;
+    begin_op();
+    ilock(ip);
+    int off = vp->offset + (pgdwnva - vp->addr);
+    // printf("readi() from off: %d\n", off);
+    if(readi(ip, 1, pgdwnva, off, PGSIZE) != PGSIZE){
+      printf("page fault: warning, readi is less than pgsize(4096).\n");
+      // kfree(mem);
+      // exit(-1);
+    }
+    iunlock(ip);
+    end_op();
+
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

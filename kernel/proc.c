@@ -6,6 +6,11 @@
 #include "proc.h"
 #include "defs.h"
 
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -20,6 +25,9 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+
+//lab10
+extern struct filmtable ftable;
 
 
 // Allocate a page for each process's kernel stack.
@@ -133,6 +141,10 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  //lab10
+  for(int i = 0; i < NUMVAMS; i++)
+    p->vmas[i].used = 0;
 
   return p;
 }
@@ -274,6 +286,24 @@ fork(void)
     return -1;
   }
 
+  //lab10
+  for(int i = 0; i < NUMVAMS; i++){
+    np->vmas[i] = p->vmas[i];
+  }
+
+  struct vma * vp;
+  for(int i = 0; i < NUMVAMS; i++){
+    vp = &(np->vmas[i]);
+    if(vp->used){
+      acquire(&ftable.lock);
+      vp->fp->ref++;
+      release(&ftable.lock);
+    }
+  }
+  //---
+  
+
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -343,6 +373,17 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+  
+  // unmap all mmapped pages.
+  for(int i = 0; i < NUMVAMS; i++){
+    struct vma *vp = &(p->vmas[i]);
+    if(vp->used){
+      if(munmap(vp->addr, vp->length) == -1){
+        panic("exit: munmap failed.\n");
+      }
+      // vp->used = 0;
+    }
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

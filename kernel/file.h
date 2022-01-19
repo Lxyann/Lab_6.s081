@@ -35,6 +35,12 @@ struct devsw {
   int (*write)(int, uint64, int);
 };
 
+struct filmtable{
+  struct spinlock lock;
+  struct file file[NFILE];
+};
+
 extern struct devsw devsw[];
+// extern struct filmtable ftable;
 
 #define CONSOLE 1
