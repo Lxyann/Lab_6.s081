@@ -102,7 +102,31 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  
+  // printf("e1000_transmit()\n");
+  uint32 idx = regs[E1000_TDT];
+  // printf("idx: %d\n", idx);
+  if(!(tx_ring[idx].status & E1000_TXD_STAT_DD)){
+    return -1;
+  } else {
+    if(tx_mbufs[idx])            // First free the old descriptor at the same position.
+      mbuffree(tx_mbufs[idx]);
+    tx_ring[idx].addr = (uint64)m->head;
+    tx_ring[idx].length = m->len;
+    tx_ring[idx].cmd |= E1000_TXD_CMD_RS; // Make e1000 can set E1000_TXD_STAT_DD after transmiting a packet.
+    /*
+    End Of Packet
+
+    When set, indicates the last descriptor making up the packet. One or many
+    descriptors can be used to form a packet.
+    */
+    // a mbuf is a packet, so we should set the EOP flag.
+    tx_ring[idx].cmd |= E1000_TXD_CMD_EOP; // End of Packet.
+
+    tx_mbufs[idx] = m;
+
+    regs[E1000_TDT] = (regs[E1000_TDT] + 1) % TX_RING_SIZE;
+  }
+
   return 0;
 }
 
@@ -115,6 +139,40 @@ e1000_recv(void)
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
   //
+
+  uint32 idx = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+
+  // There should be a loop, so that we can receive a serial of packets in a single interrupt.
+  while(rx_ring[idx].status & E1000_RXD_STAT_DD){
+
+    rx_mbufs[idx]->len = rx_ring[idx].length;
+
+    net_rx(rx_mbufs[idx]);
+    struct mbuf *newmbuf = mbufalloc(0);
+    rx_mbufs[idx] = newmbuf;
+    rx_ring[idx].addr = (uint64)newmbuf->head;
+    rx_ring[idx].status = 0;
+    regs[E1000_RDT] = idx;
+
+    idx = (idx + 1) % RX_RING_SIZE;
+  }
+
+  // the original version which only receive once at a time.
+  // if(rx_ring[idx].status & E1000_RXD_STAT_DD){
+
+  //   rx_mbufs[idx]->len = rx_ring[idx].length;
+
+  //   net_rx(rx_mbufs[idx]);
+  //   struct mbuf *newmbuf = mbufalloc(0);
+  //   rx_mbufs[idx] = newmbuf;
+  //   rx_ring[idx].addr = (uint64)newmbuf->head;
+  //   rx_ring[idx].status = 0;
+  //   regs[E1000_RDT] = idx;
+
+  //   idx = (idx + 1) % RX_RING_SIZE;
+  // }
+
 }
 
 void
